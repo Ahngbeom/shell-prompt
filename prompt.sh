@@ -32,6 +32,26 @@ __prompt_git_on() {
   return 1
 }
 
+# True if $1 (a repository's top directory) matches a glob in PROMPT_GIT_IGNORE.
+__prompt_git_ignored() {
+  local rest=${PROMPT_GIT_IGNORE-} pat
+  while [ -n "$rest" ]; do
+    pat=${rest%%:*}
+    [ -n "$pat" ] && __prompt_match "$1" "$pat" && return 0
+    case $rest in
+      *:*) rest=${rest#*:} ;;
+      *) rest='' ;;
+    esac
+  done
+  return 1
+}
+
+__prompt_host_needed=0
+if [ -n "${SSH_CONNECTION-}${SSH_TTY-}${container-}" ] || [ "${EUID-}" = 0 ] ||
+   [ -e /.dockerenv ] || [ -e /run/.containerenv ]; then
+  __prompt_host_needed=1
+fi
+
 # $1..$5 = red/green/yellow/cyan/reset in the shell's prompt syntax.
 # Sets __prompt_git_branch and __prompt_git_seg. The segment refers to the
 # branch as a literal ${__prompt_git_branch}: PS1 is expanded again at display
@@ -39,11 +59,15 @@ __prompt_git_on() {
 __prompt_git() {
   __prompt_git_seg=''
   __prompt_git_branch=''
-  local out line gd xy br='' oid='' op='' step='' total='' s=''
+  local out line gd xy top br='' oid='' op='' step='' total='' s=''
   local -i ahead=0 behind=0 staged=0 unstaged=0 untracked=0 conflicts=0 stashes=0
   local -a args=(--porcelain=v2 --branch)
   __prompt_git_on untracked || args+=(-uno)
   __prompt_git_on stash && args+=(--show-stash)
+  if [ -n "${PROMPT_GIT_IGNORE-}" ]; then
+    top=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
+    __prompt_git_ignored "$top" && return 0
+  fi
   out=$(git rev-parse --git-dir 2>/dev/null &&
     git --no-optional-locks status "${args[@]}" 2>/dev/null) || return 0
   gd=${out%%$'\n'*}
@@ -111,6 +135,13 @@ if [ -n "$BASH_VERSION" ]; then
   if [ -z "${__prompt_pre+x}" ]; then
     __prompt_pre=${PS1%'\$ '}
   fi
+  __prompt_title=''
+  case $__prompt_pre in
+    '\[\e]0;'*) __prompt_title=${__prompt_pre%%'\a\]'*}'\a\]' ;;
+  esac
+
+  # shellcheck disable=SC2053 # $2 is a glob
+  __prompt_match() { [[ $1 == $2 ]]; }
 
   # PS0 expands in this shell just before a command runs; only an arithmetic
   # subscript can assign from it. EPOCHREALTIME uses ',' in some locales.
@@ -120,17 +151,33 @@ if [ -n "$BASH_VERSION" ]; then
   esac
 
   __prompt_cmd() {
-    local ec=$? mr='' secs
+    local ec=$? mr='' secs fail=0 ch='\$' base=$__prompt_pre j n
     __prompt_seg=''
     # Unset __prompt_t0 means no command ran (empty Enter, Ctrl-C at the prompt).
     if [ -n "${__prompt_t0-}" ]; then
       secs=$(( (${EPOCHREALTIME/[.,]/} - __prompt_t0) / 1000000 ))
       unset __prompt_t0
+      [ "$ec" -ne 0 ] && fail=1
+      [ "${PROMPT_EXIT_STYLE:-code}" = char ] && ec=0
       __prompt_status_segment "$ec" "$secs" '\[\e[31m\]' '\[\e[33m\]' '\[\e[0m\]'
     fi
+    [ "$fail" = 1 ] && [ "${PROMPT_EXIT_STYLE:-code}" = char ] && ch='\[\e[31m\]\$\[\e[0m\]'
+    if [ "${PROMPT_JOBS:-0}" = 1 ]; then
+      j=$(jobs -p)
+      if [ -n "$j" ]; then
+        n=${j//[!$'\n']/}
+        __prompt_seg="$__prompt_seg\[\e[36m\]✦$(( ${#n} + 1 ))\[\e[0m\] "
+      fi
+    fi
+    if [ "${PROMPT_HOST:-always}" = auto ]; then
+      base=$__prompt_title
+      [ "$__prompt_host_needed" = 1 ] && base="$base"'\[\e[01;32m\]\u@\h\[\e[00m\]:'
+      base="$base"'\[\e[01;34m\]\w\[\e[00m\]'
+    fi
+    [ "${PROMPT_TWO_LINE:-0}" = 1 ] && ch="\\n$ch"
     __prompt_git '\[\e[31m\]' '\[\e[32m\]' '\[\e[33m\]' '\[\e[36m\]' '\[\e[0m\]'
     [ "${GIT_PROMPT_MR:-1}" = 0 ] || mr=$(git-mr --segment=bash 2>/dev/null)
-    PS1="$__prompt_seg$__prompt_pre$__prompt_git_seg${mr:+ $mr}"'\$ '
+    PS1="$__prompt_seg$base$__prompt_git_seg${mr:+ $mr}$ch "
   }
   case ";$PROMPT_COMMAND;" in
     *";__prompt_cmd;"*) ;;
@@ -139,28 +186,42 @@ if [ -n "$BASH_VERSION" ]; then
 
 elif [ -n "$ZSH_VERSION" ]; then
   setopt PROMPT_SUBST
-  zmodload zsh/datetime
+  zmodload zsh/datetime zsh/parameter
   autoload -Uz add-zsh-hook
   # Not ${__prompt_pre:=...}: the '}' of %F{green} would close the expansion.
   if [[ -z ${__prompt_pre-} ]]; then
     __prompt_pre='%B%F{green}%n@%m%f%b:%B%F{blue}%~%f%b'
   fi
 
+  __prompt_match() { [[ $1 == ${~2} ]]; }
+
   __prompt_preexec() { __prompt_t0=$EPOCHREALTIME; }
   __prompt_precmd() {
-    local ec=$? mr=''
+    local ec=$? mr='' fail=0 ch='%#' base=$__prompt_pre
     local -i secs
     __prompt_seg=''
     if [[ -n ${__prompt_t0-} ]]; then
       (( secs = EPOCHREALTIME - __prompt_t0 ))
       unset __prompt_t0
+      (( ec )) && fail=1
+      [[ ${PROMPT_EXIT_STYLE:-code} = char ]] && ec=0
       __prompt_status_segment "$ec" "$secs" '%F{red}' '%F{yellow}' '%f'
     fi
+    [[ $fail = 1 && ${PROMPT_EXIT_STYLE:-code} = char ]] && ch='%F{red}%#%f'
+    if [[ ${PROMPT_JOBS:-0} = 1 ]] && (( ${#jobstates} )); then
+      __prompt_seg="$__prompt_seg%F{cyan}✦${#jobstates}%f "
+    fi
+    if [[ ${PROMPT_HOST:-always} = auto ]]; then
+      base=''
+      [[ $__prompt_host_needed = 1 ]] && base='%B%F{green}%n@%m%f%b:'
+      base="$base%B%F{blue}%~%f%b"
+    fi
+    [[ ${PROMPT_TWO_LINE:-0} = 1 ]] && ch=$'\n'"$ch"
     __prompt_git '%F{red}' '%F{green}' '%F{yellow}' '%F{cyan}' '%f'
     # Prompt escapes are applied after PROMPT_SUBST expansion, so % must be doubled.
     __prompt_git_branch=${__prompt_git_branch//\%/%%}
     [[ ${GIT_PROMPT_MR:-1} = 0 ]] || mr=$(git-mr --segment=zsh 2>/dev/null)
-    PS1="$__prompt_seg$__prompt_pre$__prompt_git_seg${mr:+ $mr}%# "
+    PS1="$__prompt_seg$base$__prompt_git_seg${mr:+ $mr}$ch "
   }
   add-zsh-hook preexec __prompt_preexec
   # First in line, so $? is still the user's command status, not another hook's.

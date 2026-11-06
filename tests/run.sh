@@ -23,6 +23,7 @@ git clone -q "$work/remote.git" "$work/clean" 2>/dev/null
 commit "$work/clean" a 1
 commit "$work/clean" b 1
 g "$work/clean" push -u origin main
+mkdir "$work/clean/sub"
 
 git clone -q "$work/remote.git" "$work/dirty"
 git clone -q "$work/remote.git" "$work/other"
@@ -55,17 +56,18 @@ commit "$work/evil" a 1
 # shellcheck disable=SC2016 # the literal $(...) is the point
 g "$work/evil" checkout -b '$(true>pwned)'
 
-# $1 shell, $2 directory, $3 PROMPT_GIT_SHOW; prints "branch|segment" with
-# colors left empty.
+# $1 shell, $2 directory, $3 PROMPT_GIT_SHOW, $IGN PROMPT_GIT_IGNORE; prints
+# "branch|segment" with colors left empty.
 git_seg() {
-  local code="PROMPT_GIT_SHOW='${3-}'; . '$here/prompt.sh'; __prompt_git '' '' '' '' ''; printf '%s|%s\n' \"\$__prompt_git_branch\" \"\$__prompt_git_seg\""
+  local code="PROMPT_GIT_SHOW='${3-}'; PROMPT_GIT_IGNORE='${IGN-}'; . '$here/prompt.sh'; __prompt_git '' '' '' '' ''; printf '%s|%s\n' \"\$__prompt_git_branch\" \"\$__prompt_git_seg\""
   case $1 in
     bash) (cd "$2" && bash --norc -c "$code") ;;
     zsh)  (cd "$2" && "$ZSH" -f -c "${MODULE_PATH:+module_path=($MODULE_PATH);} $code") ;;
   esac
 }
 
-# $1 shell, $2 command list; prints one "TAG[PS1]" line per probe. Runs in $DIR.
+# $1 shell, $2 command list; prints one "TAG[PS1]" line per probe. Runs in $DIR,
+# with $PRE run before prompt.sh is sourced.
 run_shell() {
   local sh=$1 script=$2 prelude
   local -a cmd
@@ -74,7 +76,7 @@ run_shell() {
     # zsh imports FPATH from the environment but not MODULE_PATH.
     zsh)  cmd=("$ZSH" -f -i); prelude="${MODULE_PATH:+module_path=($MODULE_PATH)}" ;;
   esac
-  (cd "${DIR:-$work/clean}" && printf '%s\n' "$prelude" ". '$here/prompt.sh'" "$script" |
+  (cd "${DIR:-$work/clean}" && printf '%s\n' "$prelude" "${PRE-}" ". '$here/prompt.sh'" "$script" |
     env -i HOME="$work" PATH="$work/bin:/usr/bin:/bin" TERM=dumb \
       PROMPT_DURATION_MIN=1 GIT_PROMPT_MR="${MR:-0}" ${FPATH:+FPATH="$FPATH"} \
       "${cmd[@]}" 2>/dev/null) | grep -ao '[A-Z]\[.*\]$' | sed 's/^[^A-Z]*//'
@@ -102,6 +104,8 @@ same() {
 }
 
 probe='printf "P[%s]\n" "$PS1"'
+# zsh puts a real newline in PS1; bash keeps the two characters \n.
+probe_nl='printf "P[%s]\n" "${PS1//$'"'"'\n'"'"'/<NL>}"'
 suite() {
   local sh=$1 out b='${__prompt_git_branch}'
   same "$sh: git outside a repo"     "$(git_seg "$sh" "$work/plain" all)"    '|'
@@ -141,6 +145,53 @@ ${probe/P/D}")
   out=$(MR=1 run_shell "$sh" "true
 ${probe/P/M}")
   check "$sh: MR segment before prompt char"  "$out" '!42(\\\$|%#) \]$'
+
+  same "$sh: ignored repo has no git segment" "$(IGN=$work/clean git_seg "$sh" "$work/clean")" '|'
+  same "$sh: ignore matches globs in a list"  "$(IGN="/nope:$work/cl*" git_seg "$sh" "$work/clean/sub")" '|'
+  same "$sh: unmatched ignore keeps segment"  "$(IGN=/nope git_seg "$sh" "$work/clean")" "main| ($b)"
+
+  out=$(run_shell "$sh" "PROMPT_EXIT_STYLE=char
+false
+${probe/P/E}
+true
+${probe/P/F}")
+  check "$sh: char style hides exit code"     "$(sed -n 1p <<<"$out")" '✘' '!'
+  check "$sh: char style colors prompt char"  "$(sed -n 1p <<<"$out")" '(\\\[\\e\[31m\\\]\\\$|%F\{red\}%#)'
+  check "$sh: char style clears on success"   "$(sed -n 2p <<<"$out")" '(31m\\\]\\\$|red\}%#)' '!'
+
+  out=$(run_shell "$sh" "PROMPT_HOST=auto
+true
+${probe/P/H}")
+  if [ -e /.dockerenv ] || [ -e /run/.containerenv ]; then
+    echo "skip $sh: local host check (running in a container)"
+  else
+    check "$sh: auto host hidden locally"     "$out" '\\u@\\h|%n@%m' '!'
+  fi
+  out=$(PRE="export SSH_CONNECTION='1 2 3 4'" run_shell "$sh" "PROMPT_HOST=auto
+true
+${probe/P/H}")
+  check "$sh: auto host shown over SSH"       "$out" '\\u@\\h|%n@%m'
+
+  out=$(run_shell "$sh" "true
+${probe/P/N}
+PROMPT_JOBS=1
+${probe/P/O}
+sleep 5 &
+sleep 5 &
+${probe/P/J}
+PROMPT_JOBS=0
+${probe/P/Q}
+kill %1 %2")
+  check "$sh: no jobs, no job count"          "$(sed -n 2p <<<"$out")" '✦' '!'
+  check "$sh: job count"                      "$(sed -n 3p <<<"$out")" '✦2'
+  check "$sh: job count off by default"       "$(sed -n 4p <<<"$out")" '✦' '!'
+
+  out=$(run_shell "$sh" "PROMPT_TWO_LINE=1
+${probe_nl/P/T}
+PROMPT_TWO_LINE=0
+${probe_nl/P/U}")
+  check "$sh: two-line puts prompt char below" "$(sed -n 1p <<<"$out")" '(\\n|<NL>)(\\\$|%#) \]$'
+  check "$sh: one line by default"            "$(sed -n 2p <<<"$out")" '\\n|<NL>' '!'
 
   rm -f "$work/evil/pwned"
   DIR=$work/evil run_shell "$sh" "true

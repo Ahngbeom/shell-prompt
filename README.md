@@ -10,6 +10,7 @@ bash와 zsh에서 같은 모양으로 동작하는 프롬프트 설정이다. gi
 |---|---|
 | `✘1` (빨강) | 직전 명령이 0이 아닌 코드로 끝났을 때 |
 | `12s` (노랑) | 직전 명령이 `PROMPT_DURATION_MIN`초 이상 걸렸을 때 |
+| `✦2` (청록) | `PROMPT_JOBS=1`이고 백그라운드 작업이 있을 때 |
 | `(main ↑2 ↓1)` | git 저장소 안. [git 구간](#git-구간) 참고 |
 | `!289 ✔` | `git-mr`이 `PATH`에 있고 현재 브랜치에 MR/PR이 있을 때 |
 
@@ -63,10 +64,28 @@ dev1@dev-1:~/repo (main ●1 ✎2 ?3 ↑2 ↓1)$
 | 키 | 기본값 | 설명 |
 |---|---|---|
 | `PROMPT_DURATION_MIN` | `3` | 실행 시간을 보여 줄 최소 초 |
+| `PROMPT_EXIT_STYLE` | `code` | `char`이면 `✘1` 대신 프롬프트 기호(`$`, `%`)를 빨갛게 표시 |
+| `PROMPT_HOST` | `always` | `auto`이면 SSH, 컨테이너, root일 때만 `사용자@호스트:` 표시 |
+| `PROMPT_JOBS` | `0` | `1`이면 백그라운드 작업 수 `✦N` 표시 |
+| `PROMPT_TWO_LINE` | `0` | `1`이면 프롬프트 기호를 다음 줄로 내림 |
 | `PROMPT_GIT_SHOW` | 빈 값 | git 구간에 켤 요소. [git 구간](#git-구간) 참고 |
+| `PROMPT_GIT_IGNORE` | 빈 값 | git 구간을 끌 저장소. `:`로 구분한 glob을 저장소 최상위 경로와 비교 |
 | `GIT_PROMPT_MR` | `1` | `0`이면 `git-mr` MR/PR 구간을 숨김 |
 
+```bash
+PROMPT_EXIT_STYLE=char PROMPT_HOST=auto PROMPT_JOBS=1 PROMPT_TWO_LINE=1
+PROMPT_GIT_IGNORE="$HOME:$HOME/vendor/*"
+```
+```
+✦1 ~/repo (main ↑2)
+$
+```
+
 기반 프롬프트(`사용자@호스트:경로`)는 bash에서 source 시점의 `PS1`, zsh에서 `__prompt_pre` 변수를 쓴다. zsh에서 바꾸려면 source하기 전에 `__prompt_pre`를 정한다.
+
+`PROMPT_HOST=auto`는 기반 프롬프트를 내장 모양으로 다시 만든다. bash에서는 `PS1` 앞의 창 제목 설정(`\[\e]0;...\a\]`)만 이어받고, 그 밖에 직접 꾸민 `PS1`이나 `__prompt_pre`는 쓰지 않는다. SSH 여부는 `SSH_CONNECTION`, `SSH_TTY`, 컨테이너 여부는 `container` 변수와 `/.dockerenv`, `/run/.containerenv`로 판단하며, source할 때 한 번만 확인한다.
+
+`PROMPT_GIT_IGNORE`의 glob에는 `~`가 아니라 `$HOME`을 쓴다. 맞는 저장소에서는 `git status`를 실행하지 않는다.
 
 ## 요구 사항
 
