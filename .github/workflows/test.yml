@@ -1,0 +1,27 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install zsh
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y zsh
+
+      - name: Versions
+        run: |
+          bash --version | head -1
+          zsh --version
+          git --version
+
+      - name: Run tests in bash and zsh
+        # An explicit ZSH makes a missing zsh fail the run instead of skipping the zsh suite.
+        run: ZSH=/usr/bin/zsh tests/run.sh
