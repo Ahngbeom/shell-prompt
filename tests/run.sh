@@ -51,6 +51,9 @@ g "$work/rebase" checkout -b side; commit "$work/rebase" a side
 g "$work/rebase" checkout main; commit "$work/rebase" a main
 g "$work/rebase" rebase side
 
+printf '%s\n' "__pt_s_char='>>'" >"$work/my-theme.sh"
+esc=$(printf '\033')
+
 git init -q -b main "$work/evil"
 commit "$work/evil" a 1
 # shellcheck disable=SC2016 # the literal $(...) is the point
@@ -59,7 +62,7 @@ g "$work/evil" checkout -b '$(true>pwned)'
 # $1 shell, $2 directory, $3 PROMPT_GIT_SHOW, $IGN PROMPT_GIT_IGNORE; prints
 # "branch|segment" with colors left empty.
 git_seg() {
-  local code="PROMPT_GIT_SHOW='${3-}'; PROMPT_GIT_IGNORE='${IGN-}'; . '$here/prompt.sh'; __prompt_git '' '' '' '' ''; printf '%s|%s\n' \"\$__prompt_git_branch\" \"\$__prompt_git_seg\""
+  local code="NO_COLOR=1 PROMPT_THEME='${THEME-}' PROMPT_GIT_SHOW='${3-}' PROMPT_GIT_IGNORE='${IGN-}'; . '$here/prompt.sh'; __prompt_git; printf '%s|%s\n' \"\$__prompt_git_branch\" \"\$__prompt_git_seg\""
   case $1 in
     bash) (cd "$2" && bash --norc -c "$code") ;;
     zsh)  (cd "$2" && "$ZSH" -f -c "${MODULE_PATH:+module_path=($MODULE_PATH);} $code") ;;
@@ -156,8 +159,8 @@ ${probe/P/E}
 true
 ${probe/P/F}")
   check "$sh: char style hides exit code"     "$(sed -n 1p <<<"$out")" '✘' '!'
-  check "$sh: char style colors prompt char"  "$(sed -n 1p <<<"$out")" '(\\\[\\e\[31m\\\]\\\$|%F\{red\}%#)'
-  check "$sh: char style clears on success"   "$(sed -n 2p <<<"$out")" '(31m\\\]\\\$|red\}%#)' '!'
+  check "$sh: char style colors prompt char"  "$(sed -n 1p <<<"$out")" '(\\\[\\e\[31m\\\]\\\$|31m%\}%#)'
+  check "$sh: char style clears on success"   "$(sed -n 2p <<<"$out")" '(31m\\\]\\\$|31m%\}%#)' '!'
 
   out=$(run_shell "$sh" "PROMPT_HOST=auto
 true
@@ -192,6 +195,45 @@ PROMPT_TWO_LINE=0
 ${probe_nl/P/U}")
   check "$sh: two-line puts prompt char below" "$(sed -n 1p <<<"$out")" '(\\n|<NL>)(\\\$|%#) \]$'
   check "$sh: one line by default"            "$(sed -n 2p <<<"$out")" '\\n|<NL>' '!'
+
+  same "$sh: space theme git segment" "$(THEME=space git_seg "$sh" "$work/dirty" all)" "main| ⋆ $b ◉2 ✎2 ?2 ⚑1 ▴1 ▾1"
+  same "$sh: space theme new repo"   "$(THEME=space git_seg "$sh" "$work/new" all)"   "main| ⋆ $b nebula"
+
+  out=$(PRE="PROMPT_THEME=space" run_shell "$sh" "false
+${probe/P/S}
+PROMPT_EXIT_STYLE=char
+false
+${probe/P/T}")
+  check "$sh: space theme base"               "$(sed -n 1p <<<"$out")" '^S\[.*✧ '
+  check "$sh: space status after git"         "$(sed -n 1p <<<"$out")" '__prompt_git_branch.*☄ 1.*☾ ❯.* \]$'
+  check "$sh: space char style shows sun"     "$(sed -n 2p <<<"$out")" '☀ ❯'
+  check "$sh: space char style hides comet"   "$(sed -n 2p <<<"$out")" '☄' '!'
+
+  out=$(run_shell "$sh" "prompt_theme space
+true
+${probe/P/A}
+prompt_theme default
+true
+${probe/P/B}
+prompt_theme nope 2>/dev/null
+printf 'R[%s]\n' \"\$?\"
+true
+${probe/P/C}
+prompt_theme '$work/my-theme.sh'
+true
+${probe/P/D}
+prompt_theme space
+printf 'L[%s]\n' \"\$(prompt_theme | tr '\n' ,)\"")
+  check "$sh: switch to space live"           "$(sed -n 1p <<<"$out")" '☾ ❯'
+  check "$sh: switch back to default"         "$(sed -n 2p <<<"$out")" '☾' '!'
+  check "$sh: unknown theme fails"            "$(sed -n 3p <<<"$out")" '^R\[1\]$'
+  check "$sh: unknown theme keeps current"    "$(sed -n 4p <<<"$out")" '__prompt_git_branch.*\)(\\\$|%#) \]$'
+  check "$sh: theme file overrides one value" "$(sed -n 5p <<<"$out")" '\(.*__prompt_git_branch.*\)>> \]$'
+  check "$sh: theme list marks current"       "$(sed -n 6p <<<"$out")" '^L\[  default,\* space,\]$'
+
+  out=$(PRE="NO_COLOR=1 PROMPT_THEME=space" run_shell "$sh" "false
+${probe/P/N}")
+  check "$sh: NO_COLOR drops colors"          "$out" "\\\\\\[\\\\e\\[|$esc\\[" '!'
 
   rm -f "$work/evil/pwned"
   DIR=$work/evil run_shell "$sh" "true

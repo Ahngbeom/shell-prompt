@@ -1,0 +1,41 @@
+# shellcheck shell=bash disable=SC2034 # read by prompt.sh
+# Constellation theme. Needs a 256-color terminal.
+
+__pt_base=theme
+__pt_status_end=1
+__pt_status_gap=' '
+__pt_char_gap=' '
+__pt_git_open=' '
+__pt_git_close=''
+
+__pt_s_icon='✧ '
+__pt_s_branch='⋆ '
+__pt_s_exit='☄'
+__pt_s_dur='⋅ '
+__pt_s_jobs='✶'
+__pt_s_char='☾ ❯'
+__pt_s_char_fail='☀ ❯'
+__pt_s_new='nebula'
+__pt_s_staged='◉'
+__pt_s_ahead='▴'
+__pt_s_behind='▾'
+
+__pt_c_exit='38;5;208'
+__pt_c_dur='38;5;245'
+__pt_c_jobs='38;5;183'
+__pt_c_icon='38;5;141'
+__pt_c_host='38;5;183'
+__pt_c_dir='1;38;5;147'
+__pt_c_char='38;5;229'
+__pt_c_char_fail='38;5;203'
+__pt_c_branch='38;5;75'
+__pt_c_new='38;5;221'
+__pt_c_op='38;5;221'
+__pt_c_conflict='38;5;203'
+__pt_c_staged='38;5;114'
+__pt_c_unstaged='38;5;215'
+__pt_c_untracked='38;5;245'
+__pt_c_stash='38;5;183'
+__pt_c_ahead='38;5;117'
+__pt_c_behind='38;5;117'
+__pt_c_clean='38;5;114'
