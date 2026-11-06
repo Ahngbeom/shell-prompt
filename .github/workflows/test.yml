@@ -6,6 +6,15 @@ on:
   pull_request:
 
 jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run shellcheck
+        run: |
+          shellcheck --version | head -2
+          shellcheck -x prompt.sh themes/*.sh tests/run.sh
+
   test:
     runs-on: ubuntu-latest
     steps:

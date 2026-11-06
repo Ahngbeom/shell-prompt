@@ -235,6 +235,7 @@ if [ -n "$BASH_VERSION" ]; then
 
   # PS0 expands in this shell just before a command runs; only an arithmetic
   # subscript can assign from it. EPOCHREALTIME uses ',' in some locales.
+  # shellcheck disable=SC2016 # expanded later by PS0
   case $PS0 in
     *__prompt_t0*) ;;
     *) PS0="${PS0}"'${__prompt_nil[(__prompt_t0=${EPOCHREALTIME/[.,]/}),0]:0:0}' ;;
@@ -274,6 +275,7 @@ elif [ -n "$ZSH_VERSION" ]; then
   setopt PROMPT_SUBST
   zmodload zsh/datetime zsh/parameter
   autoload -Uz add-zsh-hook
+  # shellcheck disable=SC2296,SC2298 # zsh syntax
   __prompt_root=${${(%):-%x}:A:h}
   __prompt_esc_open=$'%{\e['
   __prompt_esc_close='m%}'
@@ -287,6 +289,7 @@ elif [ -n "$ZSH_VERSION" ]; then
     __prompt_pre='%B%F{green}%n@%m%f%b:%B%F{blue}%~%f%b'
   fi
 
+  # shellcheck disable=SC2053,SC2296 # zsh syntax: ${~2} is the glob
   __prompt_match() { [[ $1 == ${~2} ]]; }
 
   __prompt_preexec() { __prompt_t0=$EPOCHREALTIME; }
@@ -313,6 +316,7 @@ elif [ -n "$ZSH_VERSION" ]; then
   }
   add-zsh-hook preexec __prompt_preexec
   # First in line, so $? is still the user's command status, not another hook's.
+  # shellcheck disable=SC2206 # zsh does not word-split
   precmd_functions=(__prompt_precmd ${precmd_functions:#__prompt_precmd})
 fi
 

@@ -106,10 +106,13 @@ same() {
   fi
 }
 
+# shellcheck disable=SC2016 # run by the shell under test
 probe='printf "P[%s]\n" "$PS1"'
 # zsh puts a real newline in PS1; bash keeps the two characters \n.
+# shellcheck disable=SC2016
 probe_nl='printf "P[%s]\n" "${PS1//$'"'"'\n'"'"'/<NL>}"'
 suite() {
+  # shellcheck disable=SC2016 # the literal reference that PS1 holds
   local sh=$1 out b='${__prompt_git_branch}'
   same "$sh: git outside a repo"     "$(git_seg "$sh" "$work/plain" all)"    '|'
   same "$sh: git new repo"           "$(git_seg "$sh" "$work/new" all)"      "main| ($b new)"
@@ -249,4 +252,9 @@ else
   echo "skip zsh: not installed (set ZSH=/path/to/zsh)"
 fi
 
-[ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
+if [ "$fails" -eq 0 ]; then
+  echo "all passed"
+else
+  echo "$fails failed"
+  exit 1
+fi
